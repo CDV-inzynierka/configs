@@ -1,0 +1,40 @@
+name: Device Config Change
+
+on:
+  repository_dispatch:
+    types: [config_change]
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # lub ubuntu-latest jeśli używasz SSH
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Run Python script (update config and commit)
+        run: |
+          python3 scripts/update_configs.py  # Skrypt porównuje i aktualizuje pliki
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git add .
+          git commit -m "Auto-update configs"
+          git push
+
+      - name: Compare device configs
+        run: |
+          python3 scripts/compare_configs.py > changed_devices.txt
+
+      - name: Run Ansible playbook on changed devices
+        run: |
+          ansible-playbook deploy.yml --limit @changed_devices.txt
+
+      - name: Run Zabbix health check
+        run: |
+          python3 scripts/zabbix_check.py || echo "zabbix_failed" > fail.flag
+
+      - name: Rollback if Zabbix check failed
+        if: ${{ success() && hashFiles('fail.flag') != '' }}
+        run: |
+          git revert HEAD
+          git push
+          ansible-playbook rollback.yml
