@@ -1,40 +1,83 @@
-name: Device Config Change
+name: Deploy NetBox Configurations
 
 on:
-  repository_dispatch:
-    types: [config_change]
+  workflow_dispatch:
 
 jobs:
-  deploy:
-    runs-on: self-hosted  # lub ubuntu-latest jeśli używasz SSH
+  sync-netbox:
+    name: Run NetBox Sync Script Remotely
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - name: SSH & Run NetBox Sync Script
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /ścieżka/do/skryptu
+            python3 netbox_sync.py
 
-      - name: Run Python script (update config and commit)
-        run: |
-          python3 scripts/update_configs.py  # Skrypt porównuje i aktualizuje pliki
-          git config user.name "GitHub Action"
-          git config user.email "action@github.com"
-          git add .
-          git commit -m "Auto-update configs"
-          git push
+  ansible-deploy:
+    name: Ansible Backup & Deploy
+    needs: sync-netbox
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Compare device configs
+      - name: Set up SSH for Ansible
         run: |
-          python3 scripts/compare_configs.py > changed_devices.txt
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
-      - name: Run Ansible playbook on changed devices
+      - name: Install Ansible
         run: |
-          ansible-playbook deploy.yml --limit @changed_devices.txt
+          sudo apt update
+          sudo apt install -y ansible
 
-      - name: Run Zabbix health check
+      - name: Run Ansible Playbook (Backup & Deploy)
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
         run: |
-          python3 scripts/zabbix_check.py || echo "zabbix_failed" > fail.flag
+          ansible-playbook -i hosts.ini playbooks/deploy_and_backup.yml --private-key ~/.ssh/id_rsa -u ${{ secrets.SSH_USER }}
 
-      - name: Rollback if Zabbix check failed
-        if: ${{ success() && hashFiles('fail.flag') != '' }}
+  manual-approval:
+    name: Manual Approval for Rollback
+    needs: ansible-deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      # wymusi ręczną akceptację w GitHub UI przed przejściem dalej
+      # (wymaga skonfigurowania środowiska "production" z reviewerami)
+    steps:
+      - name: Wait for admin approval
+        run: echo "Czekam na ręczną akceptację lub odrzucenie rollbacku..."
+
+  ansible-rollback:
+    name: Ansible Rollback (optional)
+    needs: manual-approval
+    if: ${{ github.ref == 'refs/heads/main' && github.environment == 'production' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up SSH for Ansible
         run: |
-          git revert HEAD
-          git push
-          ansible-playbook rollback.yml
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Install Ansible
+        run: |
+          sudo apt update
+          sudo apt install -y ansible
+
+      - name: Run Ansible Playbook (Rollback)
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          ansible-playbook -i hosts.ini playbooks/rollback.yml --private-key ~/.ssh/id_rsa -u ${{ secrets.SSH_USER }}
