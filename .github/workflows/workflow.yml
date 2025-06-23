@@ -28,8 +28,8 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            cd /ścieżka/do/skryptu
-            python3 netbox_sync.py
+            cd /ansible
+            python3 conf2.py
 
   ansible-deploy:
     name: Ansible Backup & Deploy
