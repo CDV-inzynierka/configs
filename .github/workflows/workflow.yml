@@ -6,6 +6,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    environment: netbox
     steps:
     - name: Debug SSH secrets
       run: |
@@ -17,6 +18,7 @@ jobs:
   sync-netbox:
     name: Run NetBox Sync Script Remotely
     runs-on: ubuntu-latest
+    environment: netbox
     steps:
       - name: SSH & Run NetBox Sync Script
         uses: appleboy/ssh-action@v1.0.3
@@ -33,6 +35,7 @@ jobs:
     name: Ansible Backup & Deploy
     needs: sync-netbox
     runs-on: ubuntu-latest
+    environment: netbox
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -59,7 +62,7 @@ jobs:
     needs: ansible-deploy
     runs-on: ubuntu-latest
     environment:
-      name: production
+      name: netbox
       # wymusi ręczną akceptację w GitHub UI przed przejściem dalej
       # (wymaga skonfigurowania środowiska "production" z reviewerami)
     steps:
@@ -71,6 +74,7 @@ jobs:
     needs: manual-approval
     if: ${{ github.ref == 'refs/heads/main' && github.environment == 'production' }}
     runs-on: ubuntu-latest
+    environment: netbox
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
