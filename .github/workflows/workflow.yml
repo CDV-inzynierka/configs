@@ -62,7 +62,7 @@ jobs:
             # Uruchamia playbook Ansible.
             # Flagi --private-key i -u nie są potrzebne, ponieważ komenda jest uruchamiana lokalnie 
             # na zdalnym serwerze przez użytkownika, który zalogował się przez SSH.
-            ansible-playbook -i hosts.ini playbooks/deploy_and_backup.yml
+            ansible-playbook -i hosts.ini playbooks/deploy_config.yml
 
   manual-approval:
     name: Manual Approval for Rollback
