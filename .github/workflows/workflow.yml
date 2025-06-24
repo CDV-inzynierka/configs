@@ -32,7 +32,7 @@ jobs:
             # Przechodzi do katalogu z plikiem Pythona na zdalnym serwerze
             # Upewnij się, że ten katalog istnieje i zawiera conf2.py
             cd /ansible 
-            python3 conf2.py
+            sudo python3 conf2.py
 
   ansible-deploy:
     name: Ansible Backup & Deploy Remotely
