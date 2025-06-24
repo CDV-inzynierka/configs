@@ -5,10 +5,11 @@ on:
 
 jobs:
   test:
+    name: Debug SSH secrets
     runs-on: ubuntu-latest
     environment: netbox
     steps:
-    - name: Debug SSH secrets
+    - name: Print SSH secrets debug info
       run: |
         echo "Host: ${{ secrets.SSH_HOST }}"
         echo "User: ${{ secrets.SSH_USER }}"
@@ -28,34 +29,40 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            cd /ansible
+            # Przechodzi do katalogu z plikiem Pythona na zdalnym serwerze
+            # Upewnij się, że ten katalog istnieje i zawiera conf2.py
+            cd /ansible 
             python3 conf2.py
 
   ansible-deploy:
-    name: Ansible Backup & Deploy
+    name: Ansible Backup & Deploy Remotely
     needs: sync-netbox
     runs-on: ubuntu-latest
     environment: netbox
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up SSH for Ansible
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-      - name: Install Ansible
-        run: |
-          sudo apt update
-          sudo apt install -y ansible
-
-      - name: Run Ansible Playbook (Backup & Deploy)
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-        run: |
-          ansible-playbook -i hosts.ini playbooks/deploy_and_backup.yml --private-key ~/.ssh/id_rsa -u ${{ secrets.SSH_USER }}
+      - name: SSH & Run Ansible Playbook (Backup & Deploy)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # WAŻNE: Zakłada się, że Ansible jest zainstalowany na zdalnym serwerze.
+            # Jeśli nie, możesz dodać poniższą linię (odkomentuj):
+            # sudo apt update && sudo apt install -y ansible -y
+            
+            # Przechodzi do katalogu z playbookami na zdalnym serwerze.
+            # Upewnij się, że ten katalog zawiera hosts.ini oraz podkatalog playbooks.
+            cd /ansible 
+            
+            # Wyłącza sprawdzanie kluczy hosta Ansible na zdalnym serwerze.
+            export ANSIBLE_HOST_KEY_CHECKING="False" 
+            
+            # Uruchamia playbook Ansible.
+            # Flagi --private-key i -u nie są potrzebne, ponieważ komenda jest uruchamiana lokalnie 
+            # na zdalnym serwerze przez użytkownika, który zalogował się przez SSH.
+            ansible-playbook -i hosts.ini playbooks/deploy_and_backup.yml
 
   manual-approval:
     name: Manual Approval for Rollback
@@ -63,35 +70,40 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: netbox
-      # wymusi ręczną akceptację w GitHub UI przed przejściem dalej
-      # (wymaga skonfigurowania środowiska "production" z reviewerami)
+      # To wymusi ręczną akceptację w interfejsie GitHub przed przejściem do rollbacku.
+      # Wymaga skonfigurowania środowiska "netbox" (lub "production") z reviewerami w ustawieniach repozytorium GitHub.
     steps:
       - name: Wait for admin approval
         run: echo "Czekam na ręczną akceptację lub odrzucenie rollbacku..."
 
   ansible-rollback:
-    name: Ansible Rollback (optional)
+    name: Ansible Rollback (optional) Remotely
     needs: manual-approval
-    if: ${{ github.ref == 'refs/heads/main' && github.environment == 'production' }}
+    # Warunek 'if' kontroluje, kiedy ten krok się uruchomi. 
+    # Tutaj, uruchomi się tylko dla gałęzi 'main' po ręcznym zatwierdzeniu.
+    # Dostosuj warunek 'if' jeśli Twoje środowisko 'netbox' jest czymś innym niż 'production'
+    # lub jeśli chcesz inne kryteria uruchomienia.
+    if: ${{ github.ref == 'refs/heads/main' && github.environment == 'netbox' }}
     runs-on: ubuntu-latest
     environment: netbox
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up SSH for Ansible
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-      - name: Install Ansible
-        run: |
-          sudo apt update
-          sudo apt install -y ansible
-
-      - name: Run Ansible Playbook (Rollback)
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-        run: |
-          ansible-playbook -i hosts.ini playbooks/rollback.yml --private-key ~/.ssh/id_rsa -u ${{ secrets.SSH_USER }}
+      - name: SSH & Run Ansible Playbook (Rollback)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # WAŻNE: Zakłada się, że Ansible jest zainstalowany na zdalnym serwerze.
+            # Jeśli nie, możesz dodać poniższą linię (odkomentuj):
+            # sudo apt update && sudo apt install -y ansible -y
+            
+            # Przechodzi do katalogu z playbookami na zdalnym serwerze.
+            cd /ansible 
+            
+            # Wyłącza sprawdzanie kluczy hosta Ansible na zdalnym serwerze.
+            export ANSIBLE_HOST_KEY_CHECKING="False" 
+            
+            # Uruchamia playbook Ansible.
+            ansible-playbook -i hosts.ini playbooks/rollback.yml
